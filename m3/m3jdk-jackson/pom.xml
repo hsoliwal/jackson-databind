@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Hitesh Soliwal and contributors. SPDX-License-Identifier: Apache-2.0 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.m3.tooling</groupId>
+  <artifactId>jackson-jmod-pack</artifactId>
+  <version>2.19.2-m3-1</version>
+  <packaging>pom</packaging>
+  <name>M3 Jackson ObjectMapper source and JMOD pack</name>
+  <description>Build the pinned in-repository Jackson source modules, retain their JPMS identities, and execute the M3 integration contracts on a linked JDK 21 image.</description>
+  <licenses><license><name>Apache-2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license></licenses>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <m3.jackson.python>python3</m3.jackson.python>
+    <m3.jackson.jdk>${java.home}</m3.jackson.jdk>
+    <m3.jackson.maven>${maven.home}/bin/mvn</m3.jackson.maven>
+    <m3.jackson.maven.repo>${settings.localRepository}</m3.jackson.maven.repo>
+    <m3.jackson.maven.offline>true</m3.jackson.maven.offline>
+    <m3.jackson.repo.root>${project.basedir}/../../../..</m3.jackson.repo.root>
+    <m3.jackson.out>${project.build.directory}/pack</m3.jackson.out>
+  </properties>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>source-jmod-and-linked-contracts</id><phase>verify</phase><goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${m3.jackson.python}</executable>
+              <arguments>
+                <argument>${project.basedir}/build.py</argument>
+                <argument>--jdk-home</argument><argument>${m3.jackson.jdk}</argument>
+                <argument>--maven</argument><argument>${m3.jackson.maven}</argument>
+                <argument>--maven-repo</argument><argument>${m3.jackson.maven.repo}</argument>
+                <argument>--maven-offline</argument><argument>${m3.jackson.maven.offline}</argument>
+                <argument>--repo-root</argument><argument>${m3.jackson.repo.root}</argument>
+                <argument>--out</argument><argument>${m3.jackson.out}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

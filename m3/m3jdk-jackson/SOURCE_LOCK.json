@@ -1,0 +1,83 @@
+{
+  "build_policy": "Exact existing source POMs run in fresh staging; offline default; source-built library closure only",
+  "donors": {
+    "fastdoubleparser-1.0.90": {
+      "coordinate": "ch.randelshofer:fastdoubleparser:1.0.90-m3-source-1",
+      "file_count": 66,
+      "license": "MIT License",
+      "module": null,
+      "path": "m3/vendor/third_party/fastdoubleparser-1.0.90",
+      "provenance_sha256": "707f4185483253240ac894b197a93d37a7e6e737cd199123d7c2dc0d5130d140",
+      "sources_jar_sha256": "9ef19b07959b456930efdfd4c5690caeb9ac39b07a813e84557ca12957478ce4",
+      "tree_sha256": "f0defc18cde0e30715c6dc29cf2d57c7180e6cff5d64070599c1fed82be34040"
+    },
+    "jackson-annotations-2.19.2": {
+      "coordinate": "com.fasterxml.jackson.core:jackson-annotations:2.19.2-m3-source-1",
+      "file_count": 59,
+      "license": "The Apache Software License, Version 2.0",
+      "module": "com.fasterxml.jackson.annotation",
+      "path": "m3/vendor/third_party/jackson-annotations-2.19.2",
+      "provenance_sha256": "1022b1de04335d4509f219a9e105d15d379bae163536c29b8da42408a528b23b",
+      "sources_jar_sha256": "da889045285e7a11b6045f7e9d2eb8f669c31c48d73520dec06a094b2704e549",
+      "tree_sha256": "d0f7f3294507ed2f3fb0531a846f2e3977ad2b4d52e7798589b3cfa9016cdbb8"
+    },
+    "jackson-core-2.19.2": {
+      "coordinate": "com.fasterxml.jackson.core:jackson-core:2.19.2-m3-source-1",
+      "file_count": 156,
+      "license": "The Apache Software License, Version 2.0",
+      "module": "com.fasterxml.jackson.core",
+      "path": "m3/vendor/third_party/jackson-core-2.19.2",
+      "provenance_sha256": "db78593d1face0503e8aa0e80a6d9a67731983c0febac00f9ec8ad2fc2ad355f",
+      "sources_jar_sha256": "e0f42e8ca172a74802f06683e14de59f5fc74d8d8f782ba97269adc5782527a3",
+      "tree_sha256": "a5724f15c46a7e24bb26d78550faaa85cb8fd9966e401f0be61751ca496aca74"
+    },
+    "jackson-databind-2.19.2": {
+      "coordinate": "com.fasterxml.jackson.core:jackson-databind:2.19.2-m3-source-1",
+      "file_count": 496,
+      "license": "The Apache Software License, Version 2.0",
+      "module": "com.fasterxml.jackson.databind",
+      "path": "m3/vendor/third_party/jackson-databind-2.19.2",
+      "provenance_sha256": "d0dea2ca82a73a0126b5925b13b87bd6a6f2ef51972e7f6c7465d4d2afea7014",
+      "sources_jar_sha256": "a614fa4ad8be5f67fd6c72842dcfb13a90dbe868299f9e9817e025f44194d7d5",
+      "tree_sha256": "0144461cc5dc64f7c99baad31728068ffe32e9d03818a29f420970212f82944e"
+    }
+  },
+  "packaging_owners": [
+    {
+      "path": "m3/tooling/jmod-recipes/tools/jmod_pack.py",
+      "sha256": "a2c1f69f6aaea0de7d5047c14f6f7530fe3231dca97fffdc4defee506daeb454"
+    },
+    {
+      "path": "m3/tooling/jmod-recipes/tools/jmod_image.py",
+      "sha256": "407622e9a4db86f1b9abae2e451638713b151f14256190c0e28fe7d0739eb7cf"
+    },
+    {
+      "path": "m3/tooling/module-packs/tool_packs.py",
+      "sha256": "24edd66788009d00eddcae9b2ba1bc61fd492b28aefb5f34c1439eff9e6b5acf"
+    },
+    {
+      "path": "m3/tooling/module-packs/kernel/src/main/java/com/m3/tools/modulepack/M3ModuleArtifact.java",
+      "sha256": "c6b9e87d245a4ac5e9d4cbc74a16a541d5cd04b7ecd3da8b5ad91498d6708a59"
+    },
+    {
+      "path": "m3/tooling/module-packs/kernel/src/main/java/com/m3/tools/modulepack/M3ModuleGraph.java",
+      "sha256": "dde14d28ad4fd93ff21efddd458cd475c96e5f7fc867d68023d0069fc340fbe4"
+    },
+    {
+      "path": "m3/tooling/module-packs/kernel/src/main/java/com/m3/tools/modulepack/M3ModuleInspector.java",
+      "sha256": "12c1e5cebc488f9d4669d668caf004854c436812122ec63bf1173d3ae3a57d3c"
+    },
+    {
+      "path": "m3/tooling/module-packs/kernel/src/main/java/com/m3/tools/modulepack/M3ModuleInventory.java",
+      "sha256": "d998787f47cf52effe3e8d7764984413fa5300e8c75a24a927fc5c529421ee36"
+    },
+    {
+      "path": "m3/tooling/module-packs/kernel/src/main/java/module-info.java",
+      "sha256": "d28ab95812ea2b2024d18e037b42eaabd06ee041a74b86ce760c238d3155399d"
+    }
+  ],
+  "schema": 1,
+  "target_base_revision": "f29b0afe7ad253cc0562bc8dfdd48fc1acec710e",
+  "target_repository": "https://github.com/hsoliwal/M3jdk21",
+  "tree_digest_algorithm": "SHA-256 over UTF-8 POSIX relative path, NUL, lowercase file SHA-256, LF, sorted by relative path; excludes target, dependency-reduced-pom.xml, __pycache__, .DS_Store"
+}

@@ -1,0 +1,28 @@
+M3 Jackson ObjectMapper integration and JMOD packaging
+Copyright 2026 Hitesh Soliwal and contributors.
+Licensed under the Apache License, Version 2.0.
+
+The Jackson annotation, core and databind implementations remain the work of
+their upstream FasterXML authors and contributors. They are compiled from the
+existing, unchanged M3JDK21 source inclusions at version 2.19.2 and retain their
+original Apache-2.0 legal texts and notices. This integration does not rename or
+relicense those implementations.
+
+Jackson core's existing Maven build shades the existing source inclusion of
+Werner Randelshofer's FastDoubleParser 1.0.90. Its MIT license, original notices,
+and third-party license texts are preserved independently. The build uses its
+existing JDK 11, 17 and 21 overlays; JDK 22-only overlays are outside this JDK 21
+package.
+
+SOURCE_LOCK.json pins the exact source/build/legal trees and the existing M3
+JMOD assembler. Every resulting JMOD receives the complete selected legal bundle.
+Its source-built upstream JAR resources retain their own provenance and notices.
+
+The decoded indexed-I/O M3File adapter derives its occurrence/offset model from
+Synexia MIndexFile and retains MIndexFileTokenStore's adaptive storage logic under
+their Apache-2.0 grant. Per-file source paths, the exact source commit and Git blob
+identities are retained in the Java headers and the M3 Jackson name-mapping record.
+
+The public String API remains java.lang.String. Actual M3-backed String storage
+requires a qualified M3JDK21 runtime; passing these packaging contracts on a stock
+JDK does not establish that separate VM acceptance gate.
