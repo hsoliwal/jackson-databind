@@ -1,0 +1,472 @@
+package tools.jackson.databind.deser;
+
+import java.util.*;
+
+import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+import tools.jackson.core.*;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.*;
+import tools.jackson.databind.exc.InvalidNullException;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.node.ObjectNode;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import static tools.jackson.databind.testutil.DatabindTestUtil.*;
+
+public class NullHandlingDeserTest
+{
+    static class FunnyNullDeserializer extends ValueDeserializer<String>
+    {
+        @Override
+        public String deserialize(JsonParser jp, DeserializationContext ctxt) {
+            return "text";
+        }
+
+        @Override
+        public String getNullValue(DeserializationContext ctxt) { return "funny"; }
+    }
+
+    static class NullReturningDeserializer extends ValueDeserializer<String>
+    {
+        @Override
+        public String deserialize(JsonParser jp, DeserializationContext ctxt) {
+            return null;
+        }
+    }
+
+    static class AnySetter{
+
+        private Map<String,String> any = new HashMap<String,String>();
+
+        @JsonAnySetter
+        public void setAny(String name, String value){
+            this.any.put(name,value);
+        }
+
+        public Map<String,String> getAny(){
+            return this.any;
+        }
+    }
+
+    static class CountingAnySetter {
+        int callCount;
+        Map<String,Object> any = new LinkedHashMap<>();
+
+        @JsonAnySetter
+        public void setAny(String name, Object value) {
+            ++callCount;
+            any.put(name, value);
+        }
+    }
+
+    static class CountingStringAnySetter {
+        int callCount;
+        Map<String,String> any = new LinkedHashMap<>();
+
+        @JsonAnySetter
+        public void setAny(String name, String value) {
+            ++callCount;
+            any.put(name, value);
+        }
+    }
+
+    static class FieldStringAnySetter {
+        @JsonAnySetter
+        Map<String,String> any = new LinkedHashMap<>();
+    }
+
+    static class ObjectNodeAnySetter {
+        @JsonAnySetter
+        ObjectNode any;
+    }
+
+    static class CreatorWithCountingAnySetter {
+        final int id;
+        int callCount;
+        Map<String,Object> any = new LinkedHashMap<>();
+
+        @JsonCreator
+        CreatorWithCountingAnySetter(@JsonProperty("id") int id) {
+            this.id = id;
+        }
+
+        @JsonAnySetter
+        public void setAny(String name, Object value) {
+            ++callCount;
+            any.put(name, value);
+        }
+    }
+
+    // [databind#1601]
+    static class RootData {
+        public String name;
+        public String type;
+        @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXTERNAL_PROPERTY,
+                property = "type")
+        @JsonSubTypes({
+                @Type(value = TypeA.class, name = "TypeA"),
+                @Type(value = TypeB.class, name = "TypeB")})
+        public Proxy proxy;
+
+        public RootData() {}
+
+        public RootData(String name, String type, Proxy proxy) {
+            this.name = name;
+            this.type = type;
+            this.proxy = proxy;
+        }
+    }
+    static interface Proxy { }
+
+    static class TypeA implements Proxy {
+        public String aValue;
+        public TypeA() {}
+        public TypeA(String a) {
+            this.aValue = a;
+        }
+    }
+
+    static class TypeB implements Proxy {
+        public String bValue;
+        public TypeB() {}
+        public TypeB(String b) {
+            this.bValue = b;
+        }
+    }
+
+    // [databind #3227]
+    enum EnumMapTestEnum {
+        A, B, C;
+    }
+
+    private final ObjectMapper MAPPER = newJsonMapper();
+
+    private final ObjectMapper CONTENT_NULL_FAIL_MAPPER = JsonMapper.builder()
+            .changeDefaultNullHandling(n -> n.withContentNulls(Nulls.FAIL))
+            .build();
+
+    /*
+    /**********************************************************************
+    /* Test methods
+    /**********************************************************************
+     */
+
+    @Test
+    public void testNull() throws Exception
+    {
+        // null doesn't really have a type, fake by assuming Object
+        Object result = MAPPER.readValue("   null", Object.class);
+        assertNull(result);
+
+        // although nominal type CAN matter
+        String str = MAPPER.readValue("null", String.class);
+        assertNull(str);
+
+        StringWrapper w = MAPPER.readValue(a2q("{'str': null}"),
+                StringWrapper.class);
+        assertNotNull(w);
+        assertNull(w.str);
+    }
+
+    @Test
+    public void testAnySetterNulls() throws Exception {
+        SimpleModule module = new SimpleModule("test", Version.unknownVersion());
+        module.addDeserializer(String.class, new FunnyNullDeserializer());
+        ObjectMapper mapper = jsonMapperBuilder()
+                .addModule(module)
+                .build();
+
+        String fieldName = "fieldName";
+        String nullValue = "{\""+fieldName+"\":null}";
+
+        // should get non-default null directly:
+        AnySetter result = mapper.readValue(nullValue, AnySetter.class);
+
+        assertEquals(1, result.getAny().size());
+        assertNotNull(result.getAny().get(fieldName));
+        assertEquals("funny", result.getAny().get(fieldName));
+
+        // as well as via ObjectReader
+        ObjectReader reader = mapper.readerFor(AnySetter.class);
+        result = reader.readValue(nullValue);
+
+        assertEquals(1, result.getAny().size());
+        assertNotNull(result.getAny().get(fieldName));
+        assertEquals("funny", result.getAny().get(fieldName));
+    }
+
+    // [databind#6169]
+    @Test
+    public void testAnySetterWithDefaultNullSkip6169() throws Exception {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .changeDefaultNullHandling(v -> v.withValueNulls(Nulls.SKIP))
+                .build();
+
+        CountingAnySetter result = mapper.readValue(a2q("{'a':null,'b':1}"),
+                CountingAnySetter.class);
+
+        assertEquals(1, result.callCount);
+        assertEquals(Collections.singletonMap("b", Integer.valueOf(1)), result.any);
+    }
+
+    // [databind#6169]
+    @Test
+    public void testBufferedAnySetterWithDefaultNullSkip6169() throws Exception {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .changeDefaultNullHandling(v -> v.withValueNulls(Nulls.SKIP))
+                .build();
+
+        CreatorWithCountingAnySetter result = mapper.readValue(a2q("{'a':null,'id':7,'b':1}"),
+                CreatorWithCountingAnySetter.class);
+
+        assertEquals(7, result.id);
+        assertEquals(1, result.callCount);
+        assertEquals(Collections.singletonMap("b", Integer.valueOf(1)), result.any);
+    }
+
+    // [databind#6169]: failure should report JSON key, not any-setter method/field name
+    @Test
+    public void anySetterWithDefaultNullFailReportsKey6169() throws Exception {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .changeDefaultNullHandling(v -> v.withValueNulls(Nulls.FAIL))
+                .build();
+        final String JSON = """
+                {"b":1,"a":null,"id":7}
+                """;
+
+        for (Class<?> type : List.of(CountingAnySetter.class, FieldStringAnySetter.class,
+                CreatorWithCountingAnySetter.class)) {
+            try {
+                mapper.readValue(JSON, type);
+                fail("InvalidNullException expected for "+type.getSimpleName());
+            } catch (InvalidNullException e) {
+                assertEquals("a", e.getPropertyName().getSimpleName());
+                verifyException(e, "Invalid `null` value encountered for property \"a\"");
+            }
+        }
+    }
+
+    // [databind#6169]
+    @Test
+    public void testAnySetterNonNullTokenReturningNull6169() throws Exception {
+        SimpleModule module = new SimpleModule("test", Version.unknownVersion());
+        module.addDeserializer(String.class, new NullReturningDeserializer());
+        ObjectMapper mapper = jsonMapperBuilder()
+                .addModule(module)
+                .changeDefaultNullHandling(v -> v.withValueNulls(Nulls.SKIP))
+                .build();
+
+        CountingStringAnySetter result = mapper.readValue(a2q("{'a':'value'}"),
+                CountingStringAnySetter.class);
+
+        assertEquals(1, result.callCount);
+        assertEquals(Collections.singletonMap("a", null), result.any);
+    }
+
+    // [databind#6169]
+    @Test
+    public void testAnySetterWithValueTypeNullOverride6169() throws Exception {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .withConfigOverride(Map.class,
+                        o -> o.setNullHandling(JsonSetter.Value.forValueNulls(Nulls.FAIL)))
+                .withConfigOverride(String.class,
+                        o -> o.setNullHandling(JsonSetter.Value.forValueNulls(Nulls.SKIP)))
+                .build();
+
+        CountingStringAnySetter methodResult = mapper.readValue(a2q("{'a':null,'b':'value'}"),
+                CountingStringAnySetter.class);
+        assertEquals(1, methodResult.callCount);
+        assertEquals(Collections.singletonMap("b", "value"), methodResult.any);
+
+        FieldStringAnySetter fieldResult = mapper.readValue(a2q("{'a':null,'b':'value'}"),
+                FieldStringAnySetter.class);
+        assertEquals(Collections.singletonMap("b", "value"), fieldResult.any);
+    }
+
+    // [databind#6169]
+    @Test
+    public void testJsonNodeAnySetterWithValueTypeNullOverride6169() throws Exception {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .withConfigOverride(ObjectNode.class,
+                        o -> o.setNullHandling(JsonSetter.Value.forValueNulls(Nulls.FAIL)))
+                .withConfigOverride(JsonNode.class,
+                        o -> o.setNullHandling(JsonSetter.Value.forValueNulls(Nulls.SKIP)))
+                .build();
+
+        ObjectNodeAnySetter result = mapper.readValue(a2q("{'a':null,'b':13}"),
+                ObjectNodeAnySetter.class);
+
+        assertEquals(a2q("{'b':13}"), ""+result.any);
+    }
+
+    @Test
+    public void testCustomRootNulls() throws Exception
+    {
+        SimpleModule module = new SimpleModule("test", Version.unknownVersion());
+        module.addDeserializer(String.class, new FunnyNullDeserializer());
+        ObjectMapper mapper = jsonMapperBuilder()
+                .addModule(module)
+                .build();
+
+        // should get non-default null directly:
+        String str = mapper.readValue("null", String.class);
+        assertNotNull(str);
+        assertEquals("funny", str);
+
+        // as well as via ObjectReader
+        ObjectReader reader = mapper.readerFor(String.class);
+        str = reader.readValue("null");
+        assertNotNull(str);
+        assertEquals("funny", str);
+    }
+
+    // [databind#407]
+    @Test
+    public void testListOfNulls() throws Exception
+    {
+        SimpleModule module = new SimpleModule("test", Version.unknownVersion());
+        module.addDeserializer(String.class, new FunnyNullDeserializer());
+        ObjectMapper mapper = jsonMapperBuilder()
+                .addModule(module)
+                .build();
+
+        List<String> list = Arrays.asList("funny");
+        JavaType type = mapper.getTypeFactory().constructCollectionType(List.class, String.class);
+
+        // should get non-default null directly:
+        List<?> deser = mapper.readValue("[null]", type);
+        assertNotNull(deser);
+        assertEquals(1, deser.size());
+        assertEquals(list.get(0), deser.get(0));
+
+        // as well as via ObjectReader
+        ObjectReader reader = mapper.readerFor(type);
+        deser = reader.readValue("[null]");
+        assertNotNull(deser);
+        assertEquals(1, deser.size());
+        assertEquals(list.get(0), deser.get(0));
+    }
+
+    // Test for [#407]
+    @Test
+    public void testMapOfNulls() throws Exception
+    {
+        SimpleModule module = new SimpleModule("test", Version.unknownVersion());
+        module.addDeserializer(String.class, new FunnyNullDeserializer());
+        ObjectMapper mapper = jsonMapperBuilder()
+                .addModule(module)
+                .build();
+
+        JavaType type = mapper.getTypeFactory().constructMapType(Map.class, String.class, String.class);
+        // should get non-default null directly:
+        Map<?,?> deser = mapper.readValue("{\"key\":null}", type);
+        assertNotNull(deser);
+        assertEquals(1, deser.size());
+        assertEquals("funny", deser.get("key"));
+
+        // as well as via ObjectReader
+        ObjectReader reader = mapper.readerFor(type);
+        deser = reader.readValue("{\"key\":null}");
+        assertNotNull(deser);
+        assertEquals(1, deser.size());
+        assertEquals("funny", deser.get("key"));
+    }
+
+    // [databind#1601]
+    @Test
+    public void testPolymorphicDataNull() throws Exception
+    {
+        String typeA =
+                "{\"name\":\"TypeAData\", \"type\":\"TypeA\", \"proxy\":{\"aValue\":\"This works!\"}}";
+        RootData typeAData = MAPPER.readValue(typeA, RootData.class);
+        assertEquals("This works!", ((TypeA) typeAData.proxy).aValue, "No value for aValue!?");
+        String typeB =
+                "{\"name\":\"TypeBData\", \"type\":\"TypeB\", \"proxy\":{\"bValue\":\"This works too!\"}}";
+        RootData typeBData = MAPPER.readValue(typeB, RootData.class);
+        assertEquals("This works too!", ((TypeB) typeBData.proxy).bValue, "No value for bValue!?");
+        String typeBNull =
+                "{\"name\":\"TypeBData\", \"type\":\"TypeB\", \"proxy\": null}";
+        RootData typeBNullData = MAPPER.readValue(typeBNull, RootData.class);
+        assertNull(typeBNullData.proxy, "Proxy should be null!");
+    }
+
+    // Test for [databind#3227]
+    @Test
+    public void testContentsNullFailForMaps() throws Exception
+    {
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("{ \"field\": null, \"property\": 1 }", Map.class);
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("{ \"A\": 1, \"B\": null }", new TypeReference<EnumMap<EnumMapTestEnum, Integer>>() {});
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+    }
+
+    // Test for [databind#3227]
+    @Test
+    public void testContentsNullFailForCollections() throws Exception
+    {
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[null, {\"field\": 1}]",
+                    new TypeReference<List<Object>>() {});
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[{\"field\": 1}, null]",
+                    new TypeReference<Set<Object>>() {});
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[\"foo\", null]", new TypeReference<List<String>>() {});
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[\"foo\", null]", new TypeReference<Set<String>>() {});
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+    }
+
+    // Test for [databind#3227]
+    @Test
+    public void testContentsNullFailForArrays() throws Exception
+    {
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[null, {\"field\": 1}]", Object[].class);
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+
+        try {
+            CONTENT_NULL_FAIL_MAPPER.readValue("[null, \"foo\"]", String[].class);
+            fail("InvalidNullException expected");
+        } catch (InvalidNullException e) {
+            verifyException(e, "Invalid `null` value encountered");
+        }
+    }
+}

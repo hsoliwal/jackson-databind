@@ -1,0 +1,212 @@
+/*
+ * Copyright 2013 FasterXML.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License. You may obtain
+ * a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the license for the specific language governing permissions and
+ * limitations under the license.
+ */
+
+package tools.jackson.databind.ext.javatime.ser;
+
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.Temporal;
+import java.util.function.ToIntFunction;
+import java.util.function.ToLongFunction;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.JsonParser.NumberType;
+
+import tools.jackson.databind.*;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.ext.javatime.util.DecimalUtils;
+import tools.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
+import tools.jackson.databind.jsonFormatVisitors.JsonIntegerFormatVisitor;
+import tools.jackson.databind.jsonFormatVisitors.JsonNumberFormatVisitor;
+import tools.jackson.databind.jsonFormatVisitors.JsonValueFormat;
+
+/**
+ * Base class for serializers used for {@link java.time.Instant} and
+ * other {@link Temporal} subtypes.
+ */
+public abstract class InstantSerializerBase<T extends Temporal>
+    extends JSR310FormattedSerializerBase<T>
+{
+    private final DateTimeFormatter defaultFormat;
+
+    private final ToLongFunction<T> getEpochMillis;
+
+    private final ToLongFunction<T> getEpochSeconds;
+
+    private final ToIntFunction<T> getNanoseconds;
+
+    protected InstantSerializerBase(Class<T> supportedType, ToLongFunction<T> getEpochMillis,
+            ToLongFunction<T> getEpochSeconds, ToIntFunction<T> getNanoseconds,
+            DateTimeFormatter defaultFormat)
+    {
+        // Bit complicated, just because we actually want to "hide" default formatter,
+        // so that it won't accidentally force use of textual presentation
+        super(supportedType, null);
+        this.defaultFormat = defaultFormat;
+        this.getEpochMillis = getEpochMillis;
+        this.getEpochSeconds = getEpochSeconds;
+        this.getNanoseconds = getNanoseconds;
+    }
+
+    protected InstantSerializerBase(InstantSerializerBase<T> base,
+            DateTimeFormatter dtf,
+            Boolean useTimestamp,  Boolean useNanoseconds,
+            JsonFormat.Shape shape)
+    {
+        super(base, dtf, useTimestamp, useNanoseconds, shape);
+        defaultFormat = base.defaultFormat;
+        getEpochMillis = base.getEpochMillis;
+        getEpochSeconds = base.getEpochSeconds;
+        getNanoseconds = base.getNanoseconds;
+    }
+
+    @Override
+    protected abstract JSR310FormattedSerializerBase<?> withFormat(DateTimeFormatter dtf,
+        Boolean useTimestamp,
+        JsonFormat.Shape shape);
+
+    @Override
+    public void serialize(T value, JsonGenerator generator, SerializationContext ctxt)
+        throws JacksonException
+    {
+        // Apply millisecond truncation if enabled
+        if (ctxt.isEnabled(DateTimeFeature.TRUNCATE_TO_MSECS_ON_WRITE)) {
+            value = _truncateToMillis(value);
+        }
+
+        if (useTimestamp(ctxt)) {
+            if (useNanoseconds(ctxt)) {
+                generator.writeNumber(DecimalUtils.toBigDecimal(
+                        getEpochSeconds.applyAsLong(value), getNanoseconds.applyAsInt(value)
+                ));
+                return;
+            }
+            generator.writeNumber(getEpochMillis.applyAsLong(value));
+            return;
+        }
+
+        generator.writeString(formatValue(value, ctxt));
+    }
+
+    // Overridden to ensure that our timestamp handling is as expected
+    @Override
+    protected void _acceptTimestampVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint)
+    {
+        if (useNanoseconds(visitor.getContext())) {
+            JsonNumberFormatVisitor v2 = visitor.expectNumberFormat(typeHint);
+            if (v2 != null) {
+                v2.numberType(NumberType.BIG_DECIMAL);
+            }
+        } else {
+            JsonIntegerFormatVisitor v2 = visitor.expectIntegerFormat(typeHint);
+            if (v2 != null) {
+                v2.numberType(NumberType.LONG);
+                v2.format(JsonValueFormat.UTC_MILLISEC);
+            }
+        }
+    }
+
+    @Override
+    protected JsonToken serializationShape(SerializationContext ctxt) {
+        if (useTimestamp(ctxt)) {
+            if (useNanoseconds(ctxt)) {
+                return JsonToken.VALUE_NUMBER_FLOAT;
+            }
+            return JsonToken.VALUE_NUMBER_INT;
+        }
+        return JsonToken.VALUE_STRING;
+    }
+
+    /**
+     * Accessor for the default formatter this serializer was constructed with: used
+     * when no explicit {@link #_formatter} is defined. May be {@code null} (meaning
+     * default {@code toString()} handling), and may be caller-provided (see
+     * {@link ZonedDateTimeSerializer#ZonedDateTimeSerializer(DateTimeFormatter)}),
+     * in which case it must not be overridden by settings like
+     * {@link DateTimeFeature#ALWAYS_WRITE_SUBSECOND_DIGITS}.
+     *
+     * @since 3.3
+     */
+    protected DateTimeFormatter _defaultFormat() {
+        return defaultFormat;
+    }
+
+    /**
+     * Overridden by subclasses to supply a formatter equivalent to the standard
+     * built-in default that always writes at least millisecond-precision sub-second
+     * digits, for use with {@link DateTimeFeature#ALWAYS_WRITE_SUBSECOND_DIGITS}.
+     *<p>
+     * Implementations MUST return {@code null} unless given {@code defaultFormat} is
+     * the standard built-in default of the subclass: some subclasses (notably
+     * {@link ZonedDateTimeSerializer}) allow caller-provided default formatters, and
+     * those must not be overridden by the feature. Implementations should also return
+     * {@code null} for values the replacement cannot express, so that default handling
+     * is retained instead of failing. Returning {@code null} (which the base
+     * implementation always does) means the feature has no effect.
+     *
+     * @param value Value being serialized
+     * @param defaultFormat Default formatter that would be used if the feature was
+     *   not enabled (possibly {@code null})
+     *
+     * @since 3.3
+     */
+    protected DateTimeFormatter _alwaysWriteSubSecondDigitsFormatter(T value,
+            DateTimeFormatter defaultFormat) {
+        return null;
+    }
+
+    protected String formatValue(T value, SerializationContext ctxt)
+    {
+        DateTimeFormatter formatter = (_formatter == null) ? defaultFormat :_formatter;
+        if ((_formatter == null) && ctxt.isEnabled(DateTimeFeature.ALWAYS_WRITE_SUBSECOND_DIGITS)) {
+            DateTimeFormatter subSecondFormatter = _alwaysWriteSubSecondDigitsFormatter(value, defaultFormat);
+            if (subSecondFormatter != null) {
+                formatter = subSecondFormatter;
+            }
+        }
+        if (formatter != null) {
+            if (formatter.getZone() == null) { // timezone set if annotated on property
+                // If the user specified to use the context TimeZone explicitly, and the formatter provided doesn't contain a TZ
+                // Then we use the TZ specified in the objectMapper
+                if (ctxt.getConfig().hasExplicitTimeZone()
+                        && ctxt.isEnabled(DateTimeFeature.WRITE_DATES_WITH_CONTEXT_TIME_ZONE)) {
+                    formatter = formatter.withZone(ctxt.getTimeZone().toZoneId());
+                }
+            }
+            return formatter.format(value);
+        }
+
+        return value.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    protected T _truncateToMillis(T value) {
+        // Handle concrete types that support truncation
+        if (value instanceof java.time.Instant inst) {
+            return (T) inst.truncatedTo(ChronoUnit.MILLIS);
+        } else if (value instanceof java.time.OffsetDateTime odt) {
+            return (T) odt.truncatedTo(ChronoUnit.MILLIS);
+        } else if (value instanceof java.time.ZonedDateTime zdt) {
+            return (T) zdt.truncatedTo(ChronoUnit.MILLIS);
+        }
+        // Return as-is if type doesn't support truncation
+        return value;
+    }
+}

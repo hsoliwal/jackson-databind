@@ -1,0 +1,238 @@
+package tools.jackson.databind.ext.javatime.deser;
+
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import tools.jackson.core.*;
+import tools.jackson.databind.BeanProperty;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+
+/**
+ * Deserializer for Java 8 temporal {@link Month}s.
+ *<p>
+ * Note that unlike most other date/time types {@link Month} is also an {@link Enum}:
+ * because of this, case-insensitive matching of textual values (like {@code "January"})
+ * is enabled by either date/time-specific
+ * {@link MapperFeature#ACCEPT_CASE_INSENSITIVE_VALUES} or Enum-specific
+ * {@link MapperFeature#ACCEPT_CASE_INSENSITIVE_ENUMS}; and may also be overridden
+ * per-property with
+ * {@link JsonFormat.Feature#ACCEPT_CASE_INSENSITIVE_VALUES}.
+ */
+public class MonthDeserializer extends JSR310DateTimeDeserializerBase<Month>
+{
+    // @since 3.1
+    private final static Map<String, Month> BY_NAME_LOOKUP = Arrays.stream(Month.values())
+            .collect(Collectors.toUnmodifiableMap(Month::name, Function.identity()));
+
+    public static final MonthDeserializer INSTANCE = new MonthDeserializer();
+
+    /**
+     * Property-level override for {@link JsonFormat.Feature#ACCEPT_CASE_INSENSITIVE_VALUES}.
+     */
+    protected final Boolean _caseInsensitiveValues;
+
+    /**
+     * NOTE: only {@code public} so that use via annotations (see [modules-java8#202])
+     * is possible
+     */
+    public MonthDeserializer() {
+        this(null);
+    }
+
+    public MonthDeserializer(DateTimeFormatter formatter) {
+        super(Month.class, formatter);
+        _caseInsensitiveValues = null;
+    }
+
+    protected MonthDeserializer(MonthDeserializer base, Boolean leniency) {
+        super(base, leniency);
+        _caseInsensitiveValues = base._caseInsensitiveValues;
+    }
+
+    protected MonthDeserializer(MonthDeserializer base,
+            Boolean leniency, DateTimeFormatter formatter, JsonFormat.Shape shape) {
+        this(base, leniency, formatter, shape, base._caseInsensitiveValues);
+    }
+
+    protected MonthDeserializer(MonthDeserializer base,
+            Boolean leniency, DateTimeFormatter formatter, JsonFormat.Shape shape,
+            Boolean caseInsensitiveValues) {
+        super(base, leniency, formatter, shape);
+        _caseInsensitiveValues = caseInsensitiveValues;
+    }
+
+    @Override
+    protected MonthDeserializer withLeniency(Boolean leniency) {
+        return new MonthDeserializer(this, leniency);
+    }
+
+    @Override
+    protected MonthDeserializer withDateFormat(DateTimeFormatter dtf) {
+        return new MonthDeserializer(this, _isLenient, dtf, _shape);
+    }
+
+    protected MonthDeserializer withCaseInsensitiveValues(Boolean state) {
+        if (Objects.equals(_caseInsensitiveValues, state)) {
+            return this;
+        }
+        return new MonthDeserializer(this, _isLenient, _formatter, _shape, state);
+    }
+
+    @Override
+    protected JSR310DateTimeDeserializerBase<?> _withFormatOverrides(DeserializationContext ctxt,
+            BeanProperty property, JsonFormat.Value formatOverrides)
+    {
+        MonthDeserializer deser = (MonthDeserializer) super._withFormatOverrides(ctxt,
+                property, formatOverrides);
+        Boolean caseInsensitive = formatOverrides.getFeature(
+                JsonFormat.Feature.ACCEPT_CASE_INSENSITIVE_VALUES);
+        // Only override if explicitly specified: `null` means "no setting", must not
+        // clear a value possibly set earlier
+        if (caseInsensitive != null) {
+            deser = deser.withCaseInsensitiveValues(caseInsensitive);
+        }
+        return deser;
+    }
+
+    @Override
+    public Month deserialize(JsonParser p, DeserializationContext ctxt)
+        throws JacksonException
+    {
+        if (p.hasToken(JsonToken.VALUE_STRING)) {
+            return _fromString(p, ctxt, p.getString());
+        }
+        // Support numeric scalar input
+        if (p.hasToken(JsonToken.VALUE_NUMBER_INT)) {
+            final int monthIndex = p.getIntValue();
+            if (ctxt.isEnabled(DateTimeFeature.ONE_BASED_MONTHS)) {
+                return _decode1BasedMonth(monthIndex, ctxt);
+            }
+            return _decode0BasedMonth(monthIndex, ctxt);
+        }
+        // 30-Sep-2020, tatu: New! "Scalar from Object" (mostly for XML)
+        if (p.isExpectedStartObjectToken()) {
+            final String str = ctxt.extractScalarFromObject(p, this, handledType());
+            // 17-May-2025, tatu: [databind#4656] need to check for `null`
+            if (str != null) {
+                return _fromString(p, ctxt, str);
+            }
+            // fall through
+        } else if (p.isExpectedStartArrayToken()) {
+            // [databind#5957]: Delegate to standard array handling so empty arrays
+            // and single-element unwrapping respect coercion / UNWRAP_SINGLE_VALUE_ARRAYS.
+            return _deserializeFromArray(p, ctxt);
+        } else if (p.hasToken(JsonToken.VALUE_EMBEDDED_OBJECT)) {
+            return (Month) p.getEmbeddedObject();
+        }
+        return _handleUnexpectedToken(ctxt, p,
+                JsonToken.VALUE_STRING, JsonToken.START_ARRAY);
+    }
+
+    protected Month _fromString(JsonParser p, DeserializationContext ctxt,
+            String string0)
+        throws JacksonException
+    {
+        String string = string0.trim();
+        if (string.length() == 0) {
+            // 22-Oct-2020, tatu: not sure if we should pass original (to distinguish
+            //   b/w empty and blank); for now don't which will allow blanks to be
+            //   handled like "regular" empty (same as pre-2.12)
+            return _fromEmptyString(p, ctxt, string);
+        }
+        try {
+            if (_formatter == null) {
+                // First: try purely numeric input
+                try {
+                    int monthIndex = Integer.parseInt(string);
+                    if (ctxt.isEnabled(DateTimeFeature.ONE_BASED_MONTHS)) {
+                        return _decode1BasedMonth(monthIndex, ctxt);
+                    }
+                    return _decode0BasedMonth(monthIndex, ctxt);
+                } catch (NumberFormatException nfe) {
+                    // fall through – treat as textual month name
+                }
+                // Second: try textual input
+                // Handle English month names such as "JANUARY" from the actual Month Enum names
+                Month m = BY_NAME_LOOKUP.get(string);
+                if (m != null) {
+                    return m;
+                }
+                if (_acceptCaseInsensitiveNames(ctxt)) {
+                    m = _findMonthIgnoreCase(string);
+                    if (m != null) {
+                        return m;
+                    }
+                }
+                return (Month) ctxt.handleWeirdStringValue(handledType(), string, 
+                        "not one of known `Month` values: %s",
+                                Arrays.toString(Month.values()));
+            }
+            return Month.from(_formatter.parse(string));
+        } catch (DateTimeException e) {
+            return _handleDateTimeFormatException(ctxt, e, _formatter, string);
+        } catch (NumberFormatException e) {
+            throw ctxt.weirdStringException(string, handledType(),
+                    "not a valid Month value");
+        }
+    }
+
+    /**
+     * Helper method for checking whether textual {@link Month} names (like {@code "JANUARY"})
+     * may be matched case-insensitively: explicit per-property override, if any, takes
+     * precedence over either of the two applicable global settings.
+     */
+    private boolean _acceptCaseInsensitiveNames(DeserializationContext ctxt) {
+        if (_caseInsensitiveValues != null) {
+            return _caseInsensitiveValues;
+        }
+        // [databind#6178]: `Month` is an `Enum`, so honor Enum-specific setting as well
+        // as the date/time-specific one
+        return _acceptCaseInsensitiveValues(ctxt, null)
+                || ctxt.isEnabled(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+    }
+
+    private Month _findMonthIgnoreCase(String key) {
+        // Iterate over lookup Map (and not `Month.values()`, which allocates a new
+        // array on every call); matching same way as case-insensitive `Enum` lookup
+        // (see `CompactStringObjectMap.findCaseInsensitive()`)
+        for (Map.Entry<String, Month> entry : BY_NAME_LOOKUP.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Validate and convert a 1‑based month number to {@link Month}.
+     */
+    private Month _decode1BasedMonth(int monthIndex, DeserializationContext ctxt)
+        throws JacksonException
+    {
+        if (Month.JANUARY.getValue() <= monthIndex && monthIndex <= Month.DECEMBER.getValue()) {
+            return Month.of(monthIndex);
+        }
+        return (Month) ctxt.handleWeirdNumberValue(handledType(),
+                monthIndex, "month number outside 1-12 range for 1-based `Month`s");
+    }
+
+    /**
+     * Validate and convert a 0‑based month number to {@link Month}.
+     */
+    private Month _decode0BasedMonth(int monthIndex, DeserializationContext ctxt)
+        throws JacksonException
+    {
+        if (monthIndex < 0 || monthIndex >= 12) { // invalid for 0‑based
+            return (Month) ctxt.handleWeirdNumberValue(handledType(),
+                    monthIndex, "month number outside 0-11 range for 0-based `Month`s");
+        }
+        return Month.values()[monthIndex]; // 0‑based mapping
+    }
+}
