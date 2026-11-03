@@ -172,20 +172,6 @@ public abstract class PropertySerializerMap
         }
     }
 
-    /**
-     * Trivial container for bundling type + serializer entries.
-     */
-    private final static class TypeAndSerializer
-    {
-        public final Class<?> type;
-        public final ValueSerializer<Object> serializer;
-
-        public TypeAndSerializer(Class<?> type, ValueSerializer<Object> serializer) {
-            this.type = type;
-            this.serializer = serializer;
-        }
-    }
-
     /*
     /**********************************************************************
     /* Implementations
@@ -282,11 +268,9 @@ public abstract class PropertySerializerMap
         @Override
         public PropertySerializerMap newWith(Class<?> type, ValueSerializer<Object> serializer) {
             // Ok: let's just create generic one
-            TypeAndSerializer[] ts = new TypeAndSerializer[3];
-            ts[0] = new TypeAndSerializer(_type1, _serializer1);
-            ts[1] = new TypeAndSerializer(_type2, _serializer2);
-            ts[2] = new TypeAndSerializer(type, serializer);
-            return new Multi(this, ts);
+            return new Multi(this,
+                    new Class<?>[] { _type1, _type2, type },
+                    new ValueSerializer<?>[] { _serializer1, _serializer2, serializer });
         }
     }
 
@@ -302,41 +286,38 @@ public abstract class PropertySerializerMap
          */
         private final static int MAX_ENTRIES = 8;
 
-        private final TypeAndSerializer[] _entries;
+        private final Class<?>[] _types;
+        private final ValueSerializer<Object>[] _serializers;
 
-        public Multi(PropertySerializerMap base, TypeAndSerializer[] entries) {
+        @SuppressWarnings("unchecked")
+        public Multi(PropertySerializerMap base, Class<?>[] types,
+                ValueSerializer<?>[] serializers) {
             super(base);
-            _entries = entries;
+            _types = types;
+            // Arrays are created only by Double.newWith or Multi.newWith,
+            // using serializers supplied as ValueSerializer<Object>.
+            _serializers = (ValueSerializer<Object>[]) serializers;
         }
 
         @Override
         public ValueSerializer<Object> serializerFor(Class<?> type)
         {
-            // Always have first 3 populated so
-            TypeAndSerializer entry;
-            entry = _entries[0];
-            if (entry.type == type) return entry.serializer;
-            entry = _entries[1];
-            if (entry.type == type) return entry.serializer;
-            entry = _entries[2];
-            if (entry.type == type) return entry.serializer;
+            // Preserve the first-three, then reverse-tail lookup priority.
+            if (_types[0] == type) return _serializers[0];
+            if (_types[1] == type) return _serializers[1];
+            if (_types[2] == type) return _serializers[2];
 
-            switch (_entries.length) {
+            switch (_types.length) {
             case 8:
-                entry = _entries[7];
-                if (entry.type == type) return entry.serializer;
+                if (_types[7] == type) return _serializers[7];
             case 7:
-                entry = _entries[6];
-                if (entry.type == type) return entry.serializer;
+                if (_types[6] == type) return _serializers[6];
             case 6:
-                entry = _entries[5];
-                if (entry.type == type) return entry.serializer;
+                if (_types[5] == type) return _serializers[5];
             case 5:
-                entry = _entries[4];
-                if (entry.type == type) return entry.serializer;
+                if (_types[4] == type) return _serializers[4];
             case 4:
-                entry = _entries[3];
-                if (entry.type == type) return entry.serializer;
+                if (_types[3] == type) return _serializers[3];
             default:
             }
             return null;
@@ -345,7 +326,7 @@ public abstract class PropertySerializerMap
         @Override
         public PropertySerializerMap newWith(Class<?> type, ValueSerializer<Object> serializer)
         {
-            int len = _entries.length;
+            int len = _types.length;
             // Will only grow up to N entries. We could consider couple of alternatives after
             // this if we wanted to... but for now, two main choices make most sense
             if (len == MAX_ENTRIES) {
@@ -354,9 +335,11 @@ public abstract class PropertySerializerMap
                 }
                 return this;
             }
-            TypeAndSerializer[] entries = Arrays.copyOf(_entries, len+1);
-            entries[len] = new TypeAndSerializer(type, serializer);
-            return new Multi(this, entries);
+            Class<?>[] types = Arrays.copyOf(_types, len+1);
+            ValueSerializer<Object>[] serializers = Arrays.copyOf(_serializers, len+1);
+            types[len] = type;
+            serializers[len] = serializer;
+            return new Multi(this, types, serializers);
         }
     }
 }
